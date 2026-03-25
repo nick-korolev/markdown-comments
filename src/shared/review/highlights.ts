@@ -2,68 +2,46 @@ import type { TComment } from '@/shared/types';
 
 type THighlightRange = {
   id: string;
+  isActive: boolean;
+  isResolved: boolean;
   start: number;
   end: number;
-  isResolved: boolean;
-  isActive: boolean;
 };
 
-const createHighlightSpan = (
-  document: Document,
-  range: THighlightRange,
-  content: string,
-  isFocused: boolean,
-) => {
-  const span = document.createElement('span');
-  const classNames = ['preview-highlight'];
+const createHighlightSpan = (document: Document, range: THighlightRange, text: string) => {
+  const span = document.createElement('mark');
 
-  if (range.isResolved) {
-    classNames.push('preview-highlight--resolved');
-  }
-
-  if (range.isActive) {
-    classNames.push('preview-highlight--active');
-  }
-
-  if (isFocused) {
-    classNames.push('preview-highlight--focused');
-  }
-
-  span.className = classNames.join(' ');
   span.dataset.commentId = range.id;
-  span.textContent = content;
+  span.dataset.reviewHighlight = 'true';
+  span.dataset.reviewState = range.isResolved ? 'resolved' : 'open';
+  span.dataset.reviewActive = range.isActive ? 'true' : 'false';
+  span.textContent = text;
 
   return span;
 };
 
 const getHighlightRanges = (comments: TComment[], activeCommentId: string | null) =>
   comments
-    .filter((comment) => !comment.anchor.isDetached)
-    .flatMap<THighlightRange>((comment) => {
-      if (comment.anchor.textStart === null || comment.anchor.textEnd === null) {
-        return [];
-      }
-
-      return [
-        {
-          id: comment.id,
-          start: comment.anchor.textStart,
-          end: comment.anchor.textEnd,
-          isResolved: comment.resolved,
-          isActive: activeCommentId === comment.id,
-        },
-      ];
-    })
+    .filter(
+      (comment) =>
+        !comment.anchor.isDetached &&
+        comment.anchor.textStart !== null &&
+        comment.anchor.textEnd !== null,
+    )
+    .map<THighlightRange>((comment) => ({
+      id: comment.id,
+      isActive: activeCommentId === comment.id,
+      isResolved: comment.resolved,
+      start: comment.anchor.textStart ?? 0,
+      end: comment.anchor.textEnd ?? 0,
+    }))
     .sort((left, right) => left.start - right.start);
 
-export const renderPreviewContent = (
+export const applyPreviewHighlights = (
   container: HTMLDivElement,
-  html: string,
   comments: TComment[],
   activeCommentId: string | null,
 ) => {
-  container.innerHTML = html;
-
   const highlightRanges = getHighlightRanges(comments, activeCommentId);
 
   if (highlightRanges.length === 0) {
@@ -87,7 +65,7 @@ export const renderPreviewContent = (
       const fragment = document.createDocumentFragment();
       let localCursor = 0;
 
-      overlappingRanges.forEach((range, index) => {
+      for (const range of overlappingRanges) {
         const overlapStart = Math.max(range.start, textOffset) - textOffset;
         const overlapEnd = Math.min(range.end, nodeEnd) - textOffset;
 
@@ -95,17 +73,11 @@ export const renderPreviewContent = (
           fragment.append(nodeText.slice(localCursor, overlapStart));
         }
 
-        const isFocused =
-          index === 0 &&
-          overlapStart === 0 &&
-          overlapEnd === nodeText.length &&
-          overlappingRanges.length === 1;
-
         fragment.append(
-          createHighlightSpan(document, range, nodeText.slice(overlapStart, overlapEnd), isFocused),
+          createHighlightSpan(document, range, nodeText.slice(overlapStart, overlapEnd)),
         );
         localCursor = overlapEnd;
-      });
+      }
 
       if (localCursor < nodeText.length) {
         fragment.append(nodeText.slice(localCursor));

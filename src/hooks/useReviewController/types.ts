@@ -1,59 +1,31 @@
 import type { IFlashMessage } from '@/App/types';
-import type {
-  TComment,
-  TCommentDraft,
-  TExportMode,
-  TReviewDocument,
-  TTransferMode,
-} from '@/shared/types';
+import type { TComment, TCommentDraft, TPanelPosition, TReviewDocument } from '@/shared/types';
 import type { RefObject } from 'react';
 
 export interface IUseReviewControllerResult {
-  reviewDocument: TReviewDocument;
   activeComment: TComment | null;
-  previewHtml: string;
-  previewComments: TComment[];
   activeCommentId: string | null;
+  comments: TComment[];
   draft: TCommentDraft | null;
-  isCommentsListOpen: boolean;
-  transferMode: TTransferMode;
-  isTransferOpen: boolean;
-  exportMode: TExportMode;
-  exportValue: string;
-  importValue: string;
-  importError: string;
-  flashMessage: IFlashMessage | null;
-  lastSavedAt: string;
-  totalComments: number;
-  openComments: number;
   editorRef: RefObject<HTMLTextAreaElement | null>;
+  flashMessage: IFlashMessage | null;
+  popoverPosition: TPanelPosition | null;
   previewRef: RefObject<HTMLDivElement | null>;
-  onMarkdownChange: (value: string) => void;
-  onAddComment: () => void;
-  onAutoOpenSelectionDraft: () => void;
-  onCloseInlinePanel: () => void;
-  onFocusComment: (commentId: string) => void;
-  onEditComment: (commentId: string) => void;
+  reviewDocument: TReviewDocument;
+  onCloseComment: () => void;
+  onCopyComments: () => void;
+  onCopyReview: () => void;
   onDeleteComment: (commentId: string) => void;
-  onToggleResolved: (commentId: string) => void;
   onDraftBodyChange: (value: string) => void;
   onDraftCancel: () => void;
   onDraftSave: () => void;
-  onCopyComments: () => void;
-  onOpenComments: () => void;
-  onOpenImport: () => void;
-  onOpenExport: () => void;
-  onTransferClose: () => void;
-  onTransferModeChange: (value: TTransferMode) => void;
-  onExportModeChange: (value: TExportMode) => void;
-  onImportValueChange: (value: string) => void;
-  onImportSubmit: () => void;
-  onCopyMarkdown: () => void;
-  onCopyReview: () => void;
-  onCopyExport: () => void;
-  onSave: () => void;
-  onReset: () => void;
   onEditorScroll: () => void;
+  onEditorSelectionCapture: () => void;
+  onEditComment: (commentId: string) => void;
+  onFocusComment: (commentId: string) => void;
+  onMarkdownChange: (value: string) => void;
   onPreviewScroll: () => void;
+  onPreviewSelectionCapture: () => void;
   onPreviewTextChange: (value: string) => void;
+  onToggleResolved: (commentId: string) => void;
 }

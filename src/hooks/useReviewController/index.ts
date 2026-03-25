@@ -2,67 +2,71 @@ import { useFlashMessage } from '@/hooks/useFlashMessage';
 import type { IUseReviewControllerResult } from '@/hooks/useReviewController/types';
 import { useReviewDocumentPersistence } from '@/hooks/useReviewDocumentPersistence';
 import { useReviewShortcuts } from '@/hooks/useReviewShortcuts';
-import { useReviewTransfers } from '@/hooks/useReviewTransfers';
 import { useScrollSync } from '@/hooks/useScrollSync';
 import {
+  createAnchorFromEditorSelection,
+  createAnchorFromPreviewSelection,
   createRangeFromAnchor,
-  getSelectionAnchor,
   hasSelectionOverlap,
   resolveComments,
 } from '@/shared/review/anchors';
-import { getCommentStatus } from '@/shared/review/comments';
 import { updateReviewDocument } from '@/shared/review/document';
 import {
   focusCommentInPreview,
   focusSelectionInEditor,
+  getCommentHighlightRect,
+  getCurrentSelectionRect,
+  getPanelPosition,
   getPreviewSelectionRange,
+  getTextareaSelectionRect,
 } from '@/shared/review/dom';
+import { buildCommentsOnlyExport, buildMarkdownWithReviewExport } from '@/shared/review/export';
 import { createCommentId } from '@/shared/review/id';
-import { renderMarkdownHtml } from '@/shared/review/markdown';
-import type { TComment, TCommentDraft, TReviewDocument } from '@/shared/types';
+import type {
+  TComment,
+  TCommentAnchor,
+  TCommentDraft,
+  TPanelPosition,
+  TReviewDocument,
+} from '@/shared/types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const findCommentById = (comments: TComment[], commentId: string) =>
   comments.find((comment) => comment.id === commentId) ?? null;
 
+const findCommentBySourceOffset = (comments: TComment[], offset: number) =>
+  comments.find((comment) => {
+    if (
+      comment.anchor.isDetached ||
+      comment.anchor.sourceStart === null ||
+      comment.anchor.sourceEnd === null
+    ) {
+      return false;
+    }
+
+    return offset >= comment.anchor.sourceStart && offset <= comment.anchor.sourceEnd;
+  }) ?? null;
+
+const getPopoverPosition = (rect: DOMRect | null) => (rect ? getPanelPosition(rect) : null);
+
 export const useReviewController = (): IUseReviewControllerResult => {
-  const { reviewDocument, setReviewDocument, importReviewDocument, saveNow, lastSavedAt } =
-    useReviewDocumentPersistence();
+  const { reviewDocument, setReviewDocument, saveNow } = useReviewDocumentPersistence();
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TCommentDraft | null>(null);
-  const [isCommentsListOpen, setIsCommentsListOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState<TPanelPosition | null>(null);
   const [previewText, setPreviewText] = useState('');
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const { flashMessage, showFlashMessage } = useFlashMessage();
   const { onEditorScroll, onPreviewScroll } = useScrollSync({ editorRef, previewRef });
-  const previewHtml = useMemo(
-    () => renderMarkdownHtml(reviewDocument.markdown),
-    [reviewDocument.markdown],
-  );
-  const resolvedComments = useMemo(
+  const comments = useMemo(
     () => resolveComments(reviewDocument.markdown, reviewDocument.comments),
     [reviewDocument.comments, reviewDocument.markdown],
   );
   const activeComment = useMemo(
-    () => (activeCommentId ? findCommentById(resolvedComments, activeCommentId) : null),
-    [activeCommentId, resolvedComments],
+    () => (activeCommentId ? findCommentById(comments, activeCommentId) : null),
+    [activeCommentId, comments],
   );
-
-  const resetCommentUi = useCallback(() => {
-    setDraft(null);
-    setActiveCommentId(null);
-    setIsCommentsListOpen(false);
-  }, []);
-
-  const transfers = useReviewTransfers({
-    importReviewDocument,
-    onResetInlineState: resetCommentUi,
-    reviewDocument,
-    resolvedComments,
-    saveNow,
-    showFlashMessage,
-  });
 
   const updateDocument = useCallback(
     (updater: (currentDocument: TReviewDocument) => TReviewDocument) => {
@@ -71,48 +75,11 @@ export const useReviewController = (): IUseReviewControllerResult => {
     [setReviewDocument],
   );
 
-  const openSelectionDraft = useCallback(
-    (showErrors: boolean) => {
-      const editorElement = editorRef.current;
-      const previewElement = previewRef.current;
-      const editorSelection =
-        editorElement && editorElement.selectionEnd > editorElement.selectionStart
-          ? { start: editorElement.selectionStart, end: editorElement.selectionEnd }
-          : null;
-      const previewSelection = previewElement ? getPreviewSelectionRange(previewElement) : null;
-      const selectionSource =
-        editorSelection && document.activeElement === editorElement
-          ? 'editor'
-          : previewSelection
-            ? 'preview'
-            : editorSelection
-              ? 'editor'
-              : null;
-
-      if (!selectionSource) {
-        if (showErrors) {
-          showFlashMessage('Select text in the editor or preview first.', 'error');
-        }
-
-        return;
-      }
-
-      const anchor = getSelectionAnchor(
-        selectionSource,
-        reviewDocument.markdown,
-        previewText,
-        selectionSource === 'editor'
-          ? (editorSelection?.start ?? 0)
-          : (previewSelection?.start ?? 0),
-        selectionSource === 'editor' ? (editorSelection?.end ?? 0) : (previewSelection?.end ?? 0),
-      );
-
+  const openDraftFromAnchor = useCallback(
+    (anchor: TCommentAnchor | null, position: TPanelPosition | null, showErrors: boolean) => {
       if (!anchor) {
         if (showErrors) {
-          showFlashMessage(
-            'The current selection does not produce a stable text snippet.',
-            'error',
-          );
+          showFlashMessage('The current selection does not produce a stable anchor.', 'error');
         }
 
         return;
@@ -120,9 +87,9 @@ export const useReviewController = (): IUseReviewControllerResult => {
 
       const nextRange = createRangeFromAnchor(anchor);
 
-      if (nextRange && hasSelectionOverlap(nextRange, resolvedComments)) {
+      if (nextRange && hasSelectionOverlap(nextRange, comments)) {
         if (showErrors) {
-          showFlashMessage('Comments cannot overlap existing highlighted ranges.', 'error');
+          showFlashMessage('Comments cannot overlap existing annotations.', 'error');
         }
 
         return;
@@ -135,10 +102,21 @@ export const useReviewController = (): IUseReviewControllerResult => {
         body: '',
       });
       setActiveCommentId(null);
-      setIsCommentsListOpen(false);
-      window.getSelection()?.removeAllRanges();
+      setPopoverPosition(position);
     },
-    [previewText, resolvedComments, reviewDocument.markdown, showFlashMessage],
+    [comments, showFlashMessage],
+  );
+
+  const copyValue = useCallback(
+    async (value: string, label: string) => {
+      try {
+        await navigator.clipboard.writeText(value);
+        showFlashMessage(`${label} copied.`, 'success');
+      } catch {
+        showFlashMessage(`Unable to copy ${label.toLowerCase()}.`, 'error');
+      }
+    },
+    [showFlashMessage],
   );
 
   const onMarkdownChange = useCallback(
@@ -153,16 +131,90 @@ export const useReviewController = (): IUseReviewControllerResult => {
   );
 
   const onAddComment = useCallback(() => {
-    openSelectionDraft(true);
-  }, [openSelectionDraft]);
+    const editorElement = editorRef.current;
 
-  const onAutoOpenSelectionDraft = useCallback(() => {
-    window.requestAnimationFrame(() => openSelectionDraft(false));
-  }, [openSelectionDraft]);
+    if (!editorElement || editorElement.selectionEnd <= editorElement.selectionStart) {
+      showFlashMessage('Select text in the editor first.', 'error');
+      return;
+    }
+
+    openDraftFromAnchor(
+      createAnchorFromEditorSelection(
+        reviewDocument.markdown,
+        editorElement.selectionStart,
+        editorElement.selectionEnd,
+      ),
+      getPopoverPosition(
+        getTextareaSelectionRect(editorElement) ?? editorElement.getBoundingClientRect(),
+      ),
+      true,
+    );
+  }, [openDraftFromAnchor, reviewDocument.markdown, showFlashMessage]);
+
+  const onEditorSelectionCapture = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const editorElement = editorRef.current;
+
+      if (!editorElement) {
+        return;
+      }
+
+      if (editorElement.selectionEnd > editorElement.selectionStart) {
+        const rect =
+          getTextareaSelectionRect(editorElement) ?? editorElement.getBoundingClientRect();
+
+        openDraftFromAnchor(
+          createAnchorFromEditorSelection(
+            reviewDocument.markdown,
+            editorElement.selectionStart,
+            editorElement.selectionEnd,
+          ),
+          getPopoverPosition(rect),
+          false,
+        );
+        return;
+      }
+
+      const comment = findCommentBySourceOffset(comments, editorElement.selectionStart);
+
+      if (comment) {
+        setDraft(null);
+        setActiveCommentId(comment.id);
+        setPopoverPosition(null);
+      }
+    });
+  }, [comments, openDraftFromAnchor, reviewDocument.markdown]);
+
+  const onPreviewSelectionCapture = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      const previewElement = previewRef.current;
+
+      if (!previewElement) {
+        return;
+      }
+
+      const selectionRange = getPreviewSelectionRange(previewElement);
+
+      if (!selectionRange) {
+        return;
+      }
+
+      const rect = getCurrentSelectionRect() ?? previewElement.getBoundingClientRect();
+
+      const anchor = createAnchorFromPreviewSelection(
+        reviewDocument.markdown,
+        previewText || previewElement.textContent || '',
+        selectionRange.start,
+        selectionRange.end,
+      );
+
+      openDraftFromAnchor(anchor, getPopoverPosition(rect), false);
+    });
+  }, [openDraftFromAnchor, previewText, reviewDocument.markdown]);
 
   const onFocusComment = useCallback(
     (commentId: string) => {
-      const comment = findCommentById(resolvedComments, commentId);
+      const comment = findCommentById(comments, commentId);
 
       if (!comment) {
         return;
@@ -170,11 +222,6 @@ export const useReviewController = (): IUseReviewControllerResult => {
 
       setDraft(null);
       setActiveCommentId(commentId);
-      setIsCommentsListOpen(false);
-
-      if (previewRef.current && !comment.anchor.isDetached) {
-        focusCommentInPreview(previewRef.current, commentId);
-      }
 
       if (editorRef.current) {
         focusSelectionInEditor(
@@ -183,8 +230,20 @@ export const useReviewController = (): IUseReviewControllerResult => {
           comment.anchor.sourceEnd,
         );
       }
+
+      window.requestAnimationFrame(() => {
+        if (previewRef.current) {
+          focusCommentInPreview(previewRef.current, commentId);
+
+          const rect =
+            getCommentHighlightRect(previewRef.current, commentId) ??
+            previewRef.current.getBoundingClientRect();
+
+          setPopoverPosition(getPopoverPosition(rect));
+        }
+      });
     },
-    [resolvedComments],
+    [comments],
   );
 
   const onDraftSave = useCallback(() => {
@@ -195,7 +254,7 @@ export const useReviewController = (): IUseReviewControllerResult => {
     const body = draft.body.trim();
 
     if (!body) {
-      showFlashMessage('Comments need text before they can be saved.', 'error');
+      showFlashMessage('Comment text is required.', 'error');
       return;
     }
 
@@ -216,52 +275,58 @@ export const useReviewController = (): IUseReviewControllerResult => {
           ],
         }),
       );
+      setDraft(null);
       setActiveCommentId(nextComment.id);
       showFlashMessage('Comment saved.', 'success');
-    } else if (draft.commentId) {
-      updateDocument((currentDocument) =>
-        updateReviewDocument(currentDocument, {
-          comments: resolveComments(currentDocument.markdown, currentDocument.comments).map(
-            (comment) =>
-              comment.id === draft.commentId ? { ...comment, body, anchor: draft.anchor } : comment,
-          ),
-        }),
-      );
-      setActiveCommentId(draft.commentId);
-      showFlashMessage('Comment updated.', 'success');
+      return;
     }
 
+    if (!draft.commentId) {
+      return;
+    }
+
+    updateDocument((currentDocument) =>
+      updateReviewDocument(currentDocument, {
+        comments: resolveComments(currentDocument.markdown, currentDocument.comments).map(
+          (comment) =>
+            comment.id === draft.commentId ? { ...comment, body, anchor: draft.anchor } : comment,
+        ),
+      }),
+    );
     setDraft(null);
+    setActiveCommentId(draft.commentId);
+    showFlashMessage('Comment updated.', 'success');
   }, [draft, showFlashMessage, updateDocument]);
 
   const onEditComment = useCallback(
     (commentId: string) => {
-      const comment = findCommentById(resolvedComments, commentId);
+      const comment = findCommentById(comments, commentId);
 
       if (!comment) {
         return;
       }
 
-      setDraft({ mode: 'edit', commentId: comment.id, anchor: comment.anchor, body: comment.body });
+      setDraft({
+        mode: 'edit',
+        commentId: comment.id,
+        anchor: comment.anchor,
+        body: comment.body,
+      });
       setActiveCommentId(comment.id);
-      setIsCommentsListOpen(false);
     },
-    [resolvedComments],
+    [comments],
   );
 
   const onDeleteComment = useCallback(
     (commentId: string) => {
-      if (
-        !findCommentById(resolvedComments, commentId) ||
-        !window.confirm('Delete this comment?')
-      ) {
+      if (!findCommentById(comments, commentId)) {
         return;
       }
 
       updateDocument((currentDocument) =>
         updateReviewDocument(currentDocument, {
           comments: resolveComments(currentDocument.markdown, currentDocument.comments).filter(
-            (currentComment) => currentComment.id !== commentId,
+            (comment) => comment.id !== commentId,
           ),
         }),
       );
@@ -269,9 +334,10 @@ export const useReviewController = (): IUseReviewControllerResult => {
       setActiveCommentId((currentCommentId) =>
         currentCommentId === commentId ? null : currentCommentId,
       );
+      setPopoverPosition(null);
       showFlashMessage('Comment deleted.', 'success');
     },
-    [resolvedComments, showFlashMessage, updateDocument],
+    [comments, showFlashMessage, updateDocument],
   );
 
   const onToggleResolved = useCallback(
@@ -288,66 +354,57 @@ export const useReviewController = (): IUseReviewControllerResult => {
     [updateDocument],
   );
 
-  useReviewShortcuts({ onAddComment, onSave: transfers.onSave });
+  const onSave = useCallback(() => {
+    saveNow(reviewDocument);
+    showFlashMessage('Saved locally.', 'success');
+  }, [reviewDocument, saveNow, showFlashMessage]);
+
+  useReviewShortcuts({ onAddComment, onSave });
 
   useEffect(() => {
-    if (activeCommentId && !findCommentById(resolvedComments, activeCommentId)) {
+    if (activeCommentId && !findCommentById(comments, activeCommentId)) {
       setActiveCommentId(null);
     }
-  }, [activeCommentId, resolvedComments]);
+  }, [activeCommentId, comments]);
 
   return {
-    reviewDocument,
     activeComment,
-    previewHtml,
-    previewComments: resolvedComments,
     activeCommentId,
+    comments,
     draft,
-    isCommentsListOpen,
-    transferMode: transfers.transferMode,
-    isTransferOpen: transfers.isTransferOpen,
-    exportMode: transfers.exportMode,
-    exportValue: transfers.exportValue,
-    importValue: transfers.importValue,
-    importError: transfers.importError,
-    flashMessage,
-    lastSavedAt,
-    totalComments: resolvedComments.length,
-    openComments: resolvedComments.filter((comment) => getCommentStatus(comment) === 'open').length,
     editorRef,
+    flashMessage,
+    popoverPosition,
     previewRef,
-    onMarkdownChange,
-    onAddComment,
-    onAutoOpenSelectionDraft,
-    onCloseInlinePanel: resetCommentUi,
-    onFocusComment,
-    onEditComment,
-    onDeleteComment,
-    onToggleResolved,
-    onDraftBodyChange: (value: string) =>
-      setDraft((currentDraft) => (currentDraft ? { ...currentDraft, body: value } : currentDraft)),
-    onDraftCancel: () => setDraft(null),
-    onDraftSave,
-    onCopyComments: transfers.onCopyComments,
-    onOpenComments: () => {
+    reviewDocument,
+    onCloseComment: () => {
       setDraft(null);
       setActiveCommentId(null);
-      setIsCommentsListOpen((currentValue) => !currentValue);
+      setPopoverPosition(null);
     },
-    onOpenImport: transfers.onOpenImport,
-    onOpenExport: transfers.onOpenExport,
-    onTransferClose: transfers.onTransferClose,
-    onTransferModeChange: transfers.onTransferModeChange,
-    onExportModeChange: transfers.onExportModeChange,
-    onImportValueChange: transfers.onImportValueChange,
-    onImportSubmit: transfers.onImportSubmit,
-    onCopyMarkdown: transfers.onCopyMarkdown,
-    onCopyReview: transfers.onCopyReview,
-    onCopyExport: transfers.onCopyExport,
-    onSave: transfers.onSave,
-    onReset: transfers.onReset,
+    onCopyComments: () => void copyValue(buildCommentsOnlyExport(comments), 'Comments'),
+    onCopyReview: () =>
+      void copyValue(
+        buildMarkdownWithReviewExport(reviewDocument, comments),
+        'Markdown with comments',
+      ),
+    onDeleteComment,
+    onDraftBodyChange: (value: string) =>
+      setDraft((currentDraft) => (currentDraft ? { ...currentDraft, body: value } : currentDraft)),
+    onDraftCancel: () => {
+      setDraft(null);
+      setActiveCommentId(null);
+      setPopoverPosition(null);
+    },
+    onDraftSave,
     onEditorScroll,
+    onEditorSelectionCapture,
+    onEditComment,
+    onFocusComment,
+    onMarkdownChange,
     onPreviewScroll,
-    onPreviewTextChange: setPreviewText,
+    onPreviewSelectionCapture,
+    onPreviewTextChange: (value: string) => setPreviewText(value),
+    onToggleResolved,
   };
 };

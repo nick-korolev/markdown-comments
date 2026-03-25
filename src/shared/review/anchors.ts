@@ -9,6 +9,9 @@ import type {
   TTextRange,
 } from '@/shared/types';
 
+const START_TOKEN = '\uE000review-start-marker\uE001';
+const END_TOKEN = '\uE000review-end-marker\uE001';
+
 const resolveSourceRange = (markdown: string, anchor: TCommentAnchor) => {
   if (
     anchor.sourceStart !== null &&
@@ -63,28 +66,50 @@ const buildResolvedAnchor = (
     };
   }
 
-  const text = renderMarkdownText(markdown);
+  const renderedText = renderMarkdownText(markdown);
   const sourceRange = resolveSourceRange(markdown, baseAnchor);
 
   return {
     ...baseAnchor,
-    selectedText: text.slice(resolvedRange.start, resolvedRange.end),
+    selectedText: renderedText.slice(resolvedRange.start, resolvedRange.end),
     textStart: resolvedRange.start,
     textEnd: resolvedRange.end,
     sourceStart: sourceRange.sourceStart,
     sourceEnd: sourceRange.sourceEnd,
-    prefixContext: text.slice(
+    prefixContext: renderedText.slice(
       Math.max(0, resolvedRange.start - CONTEXT_WINDOW_LENGTH),
       resolvedRange.start,
     ),
-    suffixContext: text.slice(
+    suffixContext: renderedText.slice(
       resolvedRange.end,
-      Math.min(text.length, resolvedRange.end + CONTEXT_WINDOW_LENGTH),
+      Math.min(renderedText.length, resolvedRange.end + CONTEXT_WINDOW_LENGTH),
     ),
     matchStrategy: strategy,
     reliability,
     isDetached: false,
   };
+};
+
+const mapSourceSelectionToRenderedRange = (
+  markdown: string,
+  selectionStart: number,
+  selectionEnd: number,
+) => {
+  const markedMarkdown = `${markdown.slice(0, selectionStart)}${START_TOKEN}${markdown.slice(
+    selectionStart,
+    selectionEnd,
+  )}${END_TOKEN}${markdown.slice(selectionEnd)}`;
+  const renderedWithTokens = renderMarkdownText(markedMarkdown);
+  const tokenStart = renderedWithTokens.indexOf(START_TOKEN);
+  const tokenEnd = renderedWithTokens.indexOf(END_TOKEN);
+
+  if (tokenStart === -1 || tokenEnd === -1 || tokenEnd < tokenStart) {
+    return null;
+  }
+
+  const renderedText = renderedWithTokens.replace(START_TOKEN, '').replace(END_TOKEN, '');
+
+  return trimTextRange(renderedText, tokenStart, tokenEnd - START_TOKEN.length);
 };
 
 export const createAnchorFromEditorSelection = (
@@ -96,18 +121,13 @@ export const createAnchorFromEditorSelection = (
     return null;
   }
 
-  const renderedText = renderMarkdownText(markdown);
-  const renderedPrefix = renderMarkdownText(markdown.slice(0, selectionStart));
-  const renderedSelection = renderMarkdownText(markdown.slice(selectionStart, selectionEnd));
-  const trimmedRange = trimTextRange(
-    renderedText,
-    renderedPrefix.length,
-    renderedPrefix.length + renderedSelection.length,
-  );
+  const trimmedRange = mapSourceSelectionToRenderedRange(markdown, selectionStart, selectionEnd);
 
   if (!trimmedRange) {
     return null;
   }
+
+  const renderedText = renderMarkdownText(markdown);
 
   return {
     selectedText: trimmedRange.selectedText,

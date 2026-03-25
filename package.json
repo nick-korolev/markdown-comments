@@ -12,10 +12,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.9",
     "dompurify": "^3.2.6",
     "marked": "^15.0.12",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "textarea-caret": "^3.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

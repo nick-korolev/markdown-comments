@@ -2,9 +2,9 @@ import type { TComment } from '@/shared/types';
 import type { RefObject } from 'react';
 
 export interface IPreviewPaneProps {
-  html: string;
-  comments: TComment[];
   activeCommentId: string | null;
+  comments: TComment[];
+  markdown: string;
   previewRef: RefObject<HTMLDivElement | null>;
   onCommentFocus: (commentId: string) => void;
   onScroll: () => void;

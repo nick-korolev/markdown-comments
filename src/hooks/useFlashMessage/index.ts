@@ -8,6 +8,14 @@ export const useFlashMessage = (): IUseFlashMessageResult => {
   const [flashMessage, setFlashMessage] = useState<IFlashMessage | null>(null);
   const timeoutRef = useRef<number | null>(null);
 
+  const onCloseFlashMessage = useCallback(() => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+    }
+
+    setFlashMessage(null);
+  }, []);
+
   const showFlashMessage = useCallback((value: string, tone: IFlashMessage['tone']) => {
     if (timeoutRef.current) {
       window.clearTimeout(timeoutRef.current);
@@ -31,6 +39,7 @@ export const useFlashMessage = (): IUseFlashMessageResult => {
 
   return {
     flashMessage,
+    onCloseFlashMessage,
     showFlashMessage,
   };
 };

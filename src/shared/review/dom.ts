@@ -1,4 +1,5 @@
 import type { TPanelPosition, TTextRange } from '@/shared/types';
+import getCaretCoordinates from 'textarea-caret';
 
 export const getPreviewSelectionRange = (container: HTMLDivElement): TTextRange | null => {
   const selection = window.getSelection();
@@ -52,6 +53,22 @@ export const getCurrentSelectionRect = () => {
   return rect;
 };
 
+export const getTextareaSelectionRect = (textarea: HTMLTextAreaElement) => {
+  if (textarea.selectionEnd <= textarea.selectionStart) {
+    return null;
+  }
+
+  const coordinates = getCaretCoordinates(textarea, textarea.selectionEnd);
+  const rect = textarea.getBoundingClientRect();
+
+  return new DOMRect(
+    rect.left + coordinates.left,
+    rect.top + coordinates.top,
+    1,
+    coordinates.height,
+  );
+};
+
 export const getPanelPosition = (rect: DOMRect, panelWidth = 360): TPanelPosition => {
   const horizontalPadding = 16;
   const verticalPadding = 14;
@@ -71,9 +88,19 @@ export const focusCommentInPreview = (container: HTMLDivElement, commentId: stri
   }
 
   highlightElement.scrollIntoView({
-    behavior: 'smooth',
+    behavior: 'auto',
     block: 'center',
   });
+};
+
+export const getCommentHighlightRect = (container: HTMLDivElement, commentId: string) => {
+  const highlightElement = container.querySelector<HTMLElement>(`[data-comment-id="${commentId}"]`);
+
+  if (!highlightElement) {
+    return null;
+  }
+
+  return highlightElement.getBoundingClientRect();
 };
 
 export const focusSelectionInEditor = (
