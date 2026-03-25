@@ -1,7 +1,6 @@
 import { useFlashMessage } from '@/hooks/useFlashMessage';
 import type { IUseReviewControllerResult } from '@/hooks/useReviewController/types';
 import { useReviewDocumentPersistence } from '@/hooks/useReviewDocumentPersistence';
-import { useReviewShortcuts } from '@/hooks/useReviewShortcuts';
 import { useScrollSync } from '@/hooks/useScrollSync';
 import {
   createAnchorFromEditorSelection,
@@ -50,7 +49,7 @@ const findCommentBySourceOffset = (comments: TComment[], offset: number) =>
 const getPopoverPosition = (rect: DOMRect | null) => (rect ? getPanelPosition(rect) : null);
 
 export const useReviewController = (): IUseReviewControllerResult => {
-  const { reviewDocument, setReviewDocument, saveNow } = useReviewDocumentPersistence();
+  const { reviewDocument, setReviewDocument } = useReviewDocumentPersistence();
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [draft, setDraft] = useState<TCommentDraft | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<TPanelPosition | null>(null);
@@ -130,27 +129,6 @@ export const useReviewController = (): IUseReviewControllerResult => {
     [updateDocument],
   );
 
-  const onAddComment = useCallback(() => {
-    const editorElement = editorRef.current;
-
-    if (!editorElement || editorElement.selectionEnd <= editorElement.selectionStart) {
-      showFlashMessage('Select text in the editor first.', 'error');
-      return;
-    }
-
-    openDraftFromAnchor(
-      createAnchorFromEditorSelection(
-        reviewDocument.markdown,
-        editorElement.selectionStart,
-        editorElement.selectionEnd,
-      ),
-      getPopoverPosition(
-        getTextareaSelectionRect(editorElement) ?? editorElement.getBoundingClientRect(),
-      ),
-      true,
-    );
-  }, [openDraftFromAnchor, reviewDocument.markdown, showFlashMessage]);
-
   const onEditorSelectionCapture = useCallback(() => {
     window.requestAnimationFrame(() => {
       const editorElement = editorRef.current;
@@ -180,7 +158,11 @@ export const useReviewController = (): IUseReviewControllerResult => {
       if (comment) {
         setDraft(null);
         setActiveCommentId(comment.id);
-        setPopoverPosition(null);
+
+        const rect =
+          getTextareaSelectionRect(editorElement) ?? editorElement.getBoundingClientRect();
+
+        setPopoverPosition(getPopoverPosition(rect));
       }
     });
   }, [comments, openDraftFromAnchor, reviewDocument.markdown]);
@@ -353,13 +335,6 @@ export const useReviewController = (): IUseReviewControllerResult => {
     },
     [updateDocument],
   );
-
-  const onSave = useCallback(() => {
-    saveNow(reviewDocument);
-    showFlashMessage('Saved locally.', 'success');
-  }, [reviewDocument, saveNow, showFlashMessage]);
-
-  useReviewShortcuts({ onAddComment, onSave });
 
   useEffect(() => {
     if (activeCommentId && !findCommentById(comments, activeCommentId)) {

@@ -37,11 +37,30 @@ const getHighlightRanges = (comments: TComment[], activeCommentId: string | null
     }))
     .sort((left, right) => left.start - right.start);
 
+const removeExistingHighlights = (container: HTMLDivElement) => {
+  const marks = container.querySelectorAll<HTMLElement>('mark[data-review-highlight]');
+
+  for (const mark of marks) {
+    const parent = mark.parentNode;
+
+    if (!parent) {
+      continue;
+    }
+
+    const textNode = document.createTextNode(mark.textContent ?? '');
+
+    parent.replaceChild(textNode, mark);
+    parent.normalize();
+  }
+};
+
 export const applyPreviewHighlights = (
   container: HTMLDivElement,
   comments: TComment[],
   activeCommentId: string | null,
 ) => {
+  removeExistingHighlights(container);
+
   const highlightRanges = getHighlightRanges(comments, activeCommentId);
 
   if (highlightRanges.length === 0) {
