@@ -11,6 +11,7 @@ import {
 } from '@/shared/review/anchors';
 import { updateReviewDocument } from '@/shared/review/document';
 import {
+  clearWindowSelection,
   focusCommentInPreview,
   focusSelectionInEditor,
   getCommentHighlightRect,
@@ -185,12 +186,13 @@ export const useReviewController = (): IUseReviewControllerResult => {
 
       const anchor = createAnchorFromPreviewSelection(
         reviewDocument.markdown,
-        previewText || previewElement.textContent || '',
+        previewElement.textContent || previewText || '',
         selectionRange.start,
         selectionRange.end,
       );
 
       openDraftFromAnchor(anchor, getPopoverPosition(rect), false);
+      clearWindowSelection();
     });
   }, [openDraftFromAnchor, previewText, reviewDocument.markdown]);
 
@@ -204,6 +206,7 @@ export const useReviewController = (): IUseReviewControllerResult => {
 
       setDraft(null);
       setActiveCommentId(commentId);
+      clearWindowSelection();
 
       if (editorRef.current) {
         focusSelectionInEditor(

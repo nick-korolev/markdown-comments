@@ -1,15 +1,20 @@
-import DOMPurify from 'dompurify';
-import { marked } from 'marked';
-
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-});
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const createHtmlDocument = (html: string) => new DOMParser().parseFromString(html, 'text/html');
 
 export const renderMarkdownHtml = (markdown: string) =>
-  DOMPurify.sanitize(marked.parse(markdown) as string);
+  renderToStaticMarkup(
+    createElement(
+      ReactMarkdown,
+      {
+        remarkPlugins: [remarkGfm],
+      },
+      markdown,
+    ),
+  );
 
 export const renderMarkdownText = (markdown: string) => {
   if (!markdown.trim()) {

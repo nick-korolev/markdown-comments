@@ -1,4 +1,5 @@
 import type { IPreviewPaneProps } from '@/components/PreviewPane/types';
+import { hasExpandedSelectionInContainer } from '@/shared/review/dom';
 import { applyPreviewHighlights } from '@/shared/review/highlights';
 import Box from '@mui/material/Box';
 import Paper from '@mui/material/Paper';
@@ -49,7 +50,7 @@ export const PreviewPane: FC<IPreviewPaneProps> = ({
 
     applyPreviewHighlights(contentElement, comments, activeCommentId);
     onTextContentChange(contentElement.textContent ?? '');
-  }, [activeCommentId, comments, contentKey, onTextContentChange]);
+  }, [activeCommentId, comments, onTextContentChange]);
 
   useEffect(() => {
     const previewElement = previewRef.current;
@@ -62,6 +63,10 @@ export const PreviewPane: FC<IPreviewPaneProps> = ({
       const target = event.target;
 
       if (!(target instanceof HTMLElement)) {
+        return;
+      }
+
+      if (hasExpandedSelectionInContainer(previewElement)) {
         return;
       }
 

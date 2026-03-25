@@ -1,6 +1,26 @@
 import type { TPanelPosition, TTextRange } from '@/shared/types';
 import getCaretCoordinates from 'textarea-caret';
 
+export const clearWindowSelection = () => {
+  window.getSelection()?.removeAllRanges();
+};
+
+export const hasExpandedSelectionInContainer = (container: HTMLElement) => {
+  const selection = window.getSelection();
+
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return false;
+  }
+
+  const range = selection.getRangeAt(0);
+  const commonAncestor =
+    range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentElement
+      : (range.commonAncestorContainer as HTMLElement);
+
+  return Boolean(commonAncestor && container.contains(commonAncestor));
+};
+
 export const getPreviewSelectionRange = (container: HTMLDivElement): TTextRange | null => {
   const selection = window.getSelection();
 
