@@ -1,69 +1,29 @@
 import type { IUseReviewDocumentPersistenceResult } from '@/hooks/useReviewDocumentPersistence/types';
-import { AUTOSAVE_DELAY_MS, STORAGE_KEY, createEmptyReviewDocument } from '@/shared/constants';
+import { createEmptyReviewDocument } from '@/shared/constants';
 import { sanitizeReviewDocument } from '@/shared/review/document';
 import type { TReviewDocument } from '@/shared/types';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
-const loadStoredDocument = () => {
-  if (typeof window === 'undefined') {
-    return createEmptyReviewDocument();
-  }
-
-  const storedValue = window.localStorage.getItem(STORAGE_KEY);
-
-  if (!storedValue) {
-    return createEmptyReviewDocument();
-  }
-
-  try {
-    return sanitizeReviewDocument(JSON.parse(storedValue));
-  } catch {
-    return createEmptyReviewDocument();
-  }
-};
-
-const persistDocument = (document: TReviewDocument) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(document));
-};
+import { useCallback, useMemo, useState } from 'react';
 
 export const useReviewDocumentPersistence = (): IUseReviewDocumentPersistenceResult => {
-  const [reviewDocument, setReviewDocument] = useState<TReviewDocument>(() => loadStoredDocument());
+  const [reviewDocument, setReviewDocument] = useState<TReviewDocument>(() =>
+    createEmptyReviewDocument(),
+  );
   const [lastSavedAt, setLastSavedAt] = useState(reviewDocument.updatedAt);
-  const initialLoadRef = useRef(true);
-
-  useEffect(() => {
-    if (initialLoadRef.current) {
-      initialLoadRef.current = false;
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      persistDocument(reviewDocument);
-      setLastSavedAt(new Date().toISOString());
-    }, AUTOSAVE_DELAY_MS);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [reviewDocument]);
 
   const saveNow = useCallback(
     (value?: TReviewDocument) => {
-      const documentToSave = value ?? reviewDocument;
+      const nextDocument = value ?? reviewDocument;
 
-      persistDocument(documentToSave);
+      setReviewDocument(nextDocument);
       setLastSavedAt(new Date().toISOString());
     },
     [reviewDocument],
   );
 
   const importReviewDocument = useCallback((value: TReviewDocument) => {
-    const sanitizedDocument = sanitizeReviewDocument(value);
+    const nextDocument = sanitizeReviewDocument(value);
 
-    setReviewDocument(sanitizedDocument);
-    persistDocument(sanitizedDocument);
+    setReviewDocument(nextDocument);
     setLastSavedAt(new Date().toISOString());
   }, []);
 
@@ -71,7 +31,6 @@ export const useReviewDocumentPersistence = (): IUseReviewDocumentPersistenceRes
     const nextDocument = createEmptyReviewDocument();
 
     setReviewDocument(nextDocument);
-    persistDocument(nextDocument);
     setLastSavedAt(new Date().toISOString());
   }, []);
 
